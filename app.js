@@ -1,3 +1,80 @@
+// -------- Telegram WebApp Protection & Initialization ----------
+const tg = window.Telegram?.WebApp;
+
+// Check if running inside Telegram
+function isInsideTelegram() {
+  return !!(tg && tg.initData && tg.initData.length > 0);
+}
+
+// Show error if not in Telegram
+function showTelegramOnlyError() {
+  const splash = document.getElementById('splashScreen');
+  if (splash) {
+    splash.innerHTML = `
+      <div class="splash-content" style="padding: 20px;">
+        <div class="kraken-logo">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="80" height="80">
+            <circle cx="50" cy="50" r="48" fill="#624DE4"/>
+            <path d="M50 20 C35 20 25 35 25 45 C25 55 30 60 35 65 L30 80 L40 70 L45 85 L50 68 L55 85 L60 70 L70 80 L65 65 C70 60 75 55 75 45 C75 35 65 20 50 20 Z" fill="#FFFFFF"/>
+            <circle cx="40" cy="42" r="5" fill="#624DE4"/>
+            <circle cx="60" cy="42" r="5" fill="#624DE4"/>
+          </svg>
+        </div>
+        <h2 style="color: #fff; margin: 20px 0 10px; font-size: 20px;">Kraken Exchange</h2>
+        <p style="color: #A0A0A0; font-size: 14px; line-height: 1.5; text-align: center;">
+          Это приложение работает только<br/>внутри Telegram
+        </p>
+        <p style="color: #A0A0A0; font-size: 12px; margin-top: 15px;">
+          This app works only inside Telegram
+        </p>
+        <a href="https://t.me/KrakenEdgebot" style="
+          display: inline-block;
+          margin-top: 20px;
+          padding: 12px 30px;
+          background: linear-gradient(135deg, #624DE4, #4A3ABF);
+          color: white;
+          text-decoration: none;
+          border-radius: 12px;
+          font-weight: 500;
+        ">Открыть в Telegram</a>
+      </div>
+    `;
+    splash.style.display = 'flex';
+  }
+  document.getElementById('root').style.display = 'none';
+  document.querySelector('.navbar').style.display = 'none';
+  document.querySelector('.header').style.display = 'none';
+}
+
+// Development mode bypass (remove in production)
+const DEV_MODE = false;
+
+// Validate Telegram environment
+if (!DEV_MODE && !isInsideTelegram()) {
+  console.warn('[Kraken] Not running inside Telegram');
+  window.addEventListener('DOMContentLoaded', showTelegramOnlyError);
+}
+
+// Initialize Telegram WebApp
+if (tg) {
+  tg.ready();
+  tg.expand();
+  tg.enableClosingConfirmation();
+  tg.setHeaderColor('secondary_bg_color');
+  tg.setBackgroundColor('#0A0A0A');
+  
+  // Apply Telegram theme colors if available
+  if (tg.themeParams) {
+    const root = document.documentElement;
+    if (tg.themeParams.bg_color) {
+      root.style.setProperty('--tg-bg-color', tg.themeParams.bg_color);
+    }
+    if (tg.themeParams.text_color) {
+      root.style.setProperty('--tg-text-color', tg.themeParams.text_color);
+    }
+  }
+}
+
 // -------- Splash Screen ----------
 function hideSplashScreen() {
   const splash = document.getElementById('splashScreen');
@@ -7,14 +84,6 @@ function hideSplashScreen() {
       splash.style.display = 'none';
     }, 600);
   }
-}
-
-const tg = window.Telegram?.WebApp;
-if (tg) {
-  tg.expand();
-  tg.enableClosingConfirmation();
-  tg.setHeaderColor('secondary_bg_color');
-  tg.setBackgroundColor('#0A0A0A');
 }
 
 // -------- i18n ----------

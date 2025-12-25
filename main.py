@@ -28,15 +28,17 @@ import ssl
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./app.db")
-print(f"[DEBUG] Original DATABASE_URL: {raw_db_url[:50] if raw_db_url else 'NOT SET'}...")
+print(f"[Kraken] DATABASE_URL: {raw_db_url[:50] if raw_db_url else 'NOT SET'}...")
 
 def create_db_engine(db_url):
+    """Create database engine with smart SSL detection for different hosting platforms"""
     if not db_url or db_url.startswith("sqlite"):
         return create_async_engine(db_url, pool_pre_ping=True)
     
     if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
         clean_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1).replace("postgresql://", "postgresql+asyncpg://", 1)
         parsed = urlparse(clean_url)
+        
         query_params = parse_qs(parsed.query)
         query_params.pop('sslmode', None)
         query_params.pop('ssl', None)
@@ -44,24 +46,26 @@ def create_db_engine(db_url):
         clean_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, clean_query, parsed.fragment))
         
         hostname = parsed.hostname or ""
-        is_internal_render = hostname.startswith('dpg-') and 'render.com' not in hostname
-        is_replit_db = hostname in ('helium', 'localhost', '127.0.0.1') or 'replit' in hostname.lower()
         
-        print(f"[DEBUG] Hostname: {hostname}, Internal Render: {is_internal_render}, Replit DB: {is_replit_db}")
+        is_railway = 'railway' in hostname.lower() or os.getenv('RAILWAY_ENVIRONMENT')
+        is_internal = hostname in ('localhost', '127.0.0.1', 'postgres', 'db') or hostname.startswith('dpg-')
+        is_local_dev = hostname in ('helium', 'localhost', '127.0.0.1')
         
-        if is_internal_render or is_replit_db:
-            return create_async_engine(clean_url, pool_pre_ping=True)
+        print(f"[Kraken] DB Host: {hostname}, Railway: {is_railway}, Internal: {is_internal}")
+        
+        if is_internal or is_local_dev:
+            return create_async_engine(clean_url, pool_pre_ping=True, pool_size=5, max_overflow=10)
         else:
             ssl_ctx = ssl.create_default_context()
             ssl_ctx.check_hostname = False
             ssl_ctx.verify_mode = ssl.CERT_NONE
-            return create_async_engine(clean_url, pool_pre_ping=True, connect_args={"ssl": ssl_ctx})
+            return create_async_engine(clean_url, pool_pre_ping=True, pool_size=5, max_overflow=10, connect_args={"ssl": ssl_ctx})
     
     return create_async_engine(db_url, pool_pre_ping=True)
 
 DB_URL = raw_db_url
 engine = create_db_engine(raw_db_url)
-print(f"[DEBUG] Engine created successfully")
+print(f"[Kraken] Database engine created successfully")
 
 Base = declarative_base()
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
