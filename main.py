@@ -30,28 +30,38 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./app.db")
 print(f"[DEBUG] Original DATABASE_URL: {raw_db_url[:50] if raw_db_url else 'NOT SET'}...")
 
-if raw_db_url and (raw_db_url.startswith("postgresql://") or raw_db_url.startswith("postgres://")):
-    DB_URL = raw_db_url.replace("postgres://", "postgresql+asyncpg://", 1).replace("postgresql://", "postgresql+asyncpg://", 1)
-    parsed = urlparse(DB_URL)
-    query_params = parse_qs(parsed.query)
-    query_params.pop('sslmode', None)
-    query_params.pop('ssl', None)
-    clean_query = urlencode(query_params, doseq=True)
-    DB_URL = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, clean_query, parsed.fragment))
+def create_db_engine(db_url):
+    if not db_url or db_url.startswith("sqlite"):
+        return create_async_engine(db_url, pool_pre_ping=True)
     
-    is_internal_render = parsed.netloc and 'render.com' not in parsed.netloc and parsed.netloc.startswith('dpg-')
+    if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
+        clean_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1).replace("postgresql://", "postgresql+asyncpg://", 1)
+        parsed = urlparse(clean_url)
+        query_params = parse_qs(parsed.query)
+        query_params.pop('sslmode', None)
+        query_params.pop('ssl', None)
+        clean_query = urlencode(query_params, doseq=True)
+        clean_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, clean_query, parsed.fragment))
+        
+        hostname = parsed.hostname or ""
+        is_internal_render = hostname.startswith('dpg-') and 'render.com' not in hostname
+        is_replit_db = hostname in ('helium', 'localhost', '127.0.0.1') or 'replit' in hostname.lower()
+        
+        print(f"[DEBUG] Hostname: {hostname}, Internal Render: {is_internal_render}, Replit DB: {is_replit_db}")
+        
+        if is_internal_render or is_replit_db:
+            return create_async_engine(clean_url, pool_pre_ping=True)
+        else:
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            return create_async_engine(clean_url, pool_pre_ping=True, connect_args={"ssl": ssl_ctx})
     
-    if is_internal_render:
-        engine = create_async_engine(DB_URL, pool_pre_ping=True)
-    else:
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-        engine = create_async_engine(DB_URL, pool_pre_ping=True, connect_args={"ssl": ssl_ctx})
-else:
-    DB_URL = raw_db_url
-    engine = create_async_engine(DB_URL, pool_pre_ping=True)
-print(f"[DEBUG] Final DB_URL: {DB_URL[:50]}...")
+    return create_async_engine(db_url, pool_pre_ping=True)
+
+DB_URL = raw_db_url
+engine = create_db_engine(raw_db_url)
+print(f"[DEBUG] Engine created successfully")
 
 Base = declarative_base()
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
